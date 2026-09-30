@@ -81,6 +81,8 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--brass);outline-
   <div class="row">
     <button id="start" type="button">コンパスを開始</button>
     <button id="camBtn" class="alt" type="button" hidden>カメラで測る</button>
+    <button id="gpsBtn" class="alt" type="button" hidden>GPSで補正</button>
+    <button id="rstBtn" class="alt" type="button" hidden>補正リセット</button>
     <button id="rec" class="rec" type="button" hidden>この向きを記録</button>
   </div>
 
@@ -95,6 +97,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--brass);outline-
     <ol id="list"></ol>
   </section>
 
+  <p class="note" id="gpsInfo" hidden></p>
   <p class="note" id="diag" hidden></p>
   <p class="note" id="note">0°が北、時計回りに増えます（東90°・南180°・西270°）。値は磁北基準です。カメラで測るときは端末を縦に持ち、背面カメラの向きを測ります。</p>
 </main>
@@ -139,12 +142,12 @@ function headingOf(e){
   }
   return 360-e.alpha;
 }
-let nAbs=0,nRel=0;
+let nAbs=0,nRel=0,raw=null,offset=0;
 function onOrient(e){
   if(e.type==="deviceorientationabsolute")nAbs++;else nRel++;
   const v=headingOf(e);
   if(v===null||isNaN(v)) return;
-  last=Date.now();show(v);
+  last=Date.now();raw=v;show(v+offset);
 }
 
 function showManual(){$("manual").hidden=false;$("rec").hidden=false;$("logBox").hidden=false;}
@@ -158,7 +161,7 @@ $("start").addEventListener("click",async()=>{
     }
     addEventListener("deviceorientationabsolute",onOrient,true);
     addEventListener("deviceorientation",onOrient,true);
-    $("start").hidden=true;$("camBtn").hidden=false;$("rec").hidden=false;$("logBox").hidden=false;
+    $("start").hidden=true;$("camBtn").hidden=false;$("gpsBtn").hidden=false;$("rec").hidden=false;$("logBox").hidden=false;updRst();
     $("dir").textContent="向きを取得中…";
     const framed=window.self!==window.top;
     const dg=$("diag");dg.hidden=false;
@@ -202,6 +205,38 @@ $("list").addEventListener("click",e=>{
 });
 $("clear").addEventListener("click",()=>{logs=[];save();render();});
 render();
+
+/* GPS補正: 歩行中のGPS進行方向(真北基準)とセンサー値の差を補正値にする */
+try{offset=+localStorage.getItem("headingOffset")||0;}catch(e){}
+const meanAng=a=>{let s=0,c=0;a.forEach(x=>{s+=Math.sin(x*Math.PI/180);c+=Math.cos(x*Math.PI/180);});return Math.atan2(s,c)*180/Math.PI;};
+let gw=null,samples=[];
+const gi=$("gpsInfo");
+function updRst(){$("rstBtn").hidden=!(offset!==0&&$("start").hidden);}
+function gpsToggle(){
+  if(gw!==null){
+    navigator.geolocation.clearWatch(gw);gw=null;
+    try{localStorage.setItem("headingOffset",String(offset));}catch(e){}
+    $("gpsBtn").textContent="GPSで補正";
+    gi.textContent="補正を確定しました（"+(offset>=0?"+":"")+offset.toFixed(1)+"°）";
+    updRst();return;
+  }
+  gi.hidden=false;
+  if(!navigator.geolocation){gi.textContent="この端末ではGPSを使えません";return;}
+  samples=[];gi.textContent="GPSを取得中…";$("gpsBtn").textContent="補正を確定";
+  gw=navigator.geolocation.watchPosition(p=>{
+    const c=p.coords,sp=c.speed||0;
+    let msg="GPS精度 ±"+Math.round(c.accuracy)+"m ／ 速度 "+sp.toFixed(1)+"m/s";
+    if(c.heading!=null&&!isNaN(c.heading)&&sp>1&&raw!==null&&c.accuracy<30){
+      samples.push(((c.heading-raw+540)%360)-180);
+      if(samples.length>8)samples.shift();
+      offset=meanAng(samples);
+      msg+=" ／ 補正 "+(offset>=0?"+":"")+offset.toFixed(1)+"°（"+samples.length+"/8）";
+    }else msg+=" ／ 歩いて、進行方向へ端末を向けてください（1m/s以上）";
+    gi.textContent=msg;updRst();
+  },()=>{gi.textContent="GPSを使えませんでした。位置情報の許可を確認してください";},{enableHighAccuracy:true,maximumAge:0,timeout:20000});
+}
+$("gpsBtn").addEventListener("click",gpsToggle);
+$("rstBtn").addEventListener("click",()=>{offset=0;samples=[];try{localStorage.setItem("headingOffset","0");}catch(e){}gi.hidden=false;gi.textContent="補正をリセットしました";updRst();});
 </script>
 </body>
 </html>
