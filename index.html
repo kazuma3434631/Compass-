@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>方位角メーター</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;700&display=swap">
+<style>
+:root{--bg:#e6f0ee;--ink:#16303a;--sub:#5b7680;--needle:#d6452f;--brass:#b68b3c;--panel:#f4f9f8;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1e24;--ink:#dcebe8;--sub:#8fa9b0;--needle:#ff6a50;--brass:#d2a851;--panel:#16292f}}
+:root[data-theme="dark"]{--bg:#0f1e24;--ink:#dcebe8;--sub:#8fa9b0;--needle:#ff6a50;--brass:#d2a851;--panel:#16292f}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:"Zen Kaku Gothic New","Hiragino Sans","Yu Gothic",sans-serif;min-height:100vh;display:flex;justify-content:center}
+main{width:100%;max-width:440px;padding:20px 20px 32px;display:flex;flex-direction:column;align-items:center;gap:16px}
+h1{font-size:1rem;font-weight:700;margin:0;align-self:flex-start;color:var(--sub)}
+[hidden]{display:none!important}
+.cam{position:relative;width:100%;aspect-ratio:3/4;max-height:62vh;border-radius:14px;overflow:hidden;background:#000}
+.cam video{width:100%;height:100%;object-fit:cover;display:block}
+.cross{position:absolute;inset:0;width:100%;height:100%;filter:drop-shadow(0 0 2px rgba(0,0,0,.8))}
+.camnum{position:absolute;left:12px;top:10px;color:#fff;font-weight:700;font-size:2.2rem;font-variant-numeric:tabular-nums;text-shadow:0 1px 4px rgba(0,0,0,.8)}
+.camnum small{font-size:.95rem;margin-left:8px;font-weight:400}
+.dial{position:relative;width:min(84vw,360px);aspect-ratio:1}
+.compact .dial{width:min(46vw,200px)}
+.dial svg{width:100%;height:100%;display:block}
+.readout{text-align:center;margin-top:-4px}
+.deg{font-size:4.6rem;font-weight:700;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.deg span{font-size:1.6rem;color:var(--brass);margin-left:2px}
+.dir{font-size:1.15rem;margin-top:6px}
+.compact .deg{font-size:2.6rem}
+.note{font-size:.82rem;color:var(--sub);line-height:1.7;text-align:center;max-width:34em;margin:0}
+.row{display:flex;gap:10px;width:100%;justify-content:center;flex-wrap:wrap}
+button{font:inherit;font-weight:700;background:var(--ink);color:var(--bg);border:0;border-radius:10px;padding:13px 20px;cursor:pointer}
+button.alt{background:var(--panel);color:var(--ink);box-shadow:inset 0 0 0 2px var(--ink)}
+button.rec{background:var(--needle);color:#fff;flex:1 1 100%;font-size:1.05rem;padding:15px}
+button.sm{padding:6px 12px;font-size:.8rem}
+button:focus-visible,input:focus-visible{outline:3px solid var(--brass);outline-offset:3px}
+.manual{width:100%;background:var(--panel);border-radius:12px;padding:14px 16px}
+.manual label{display:flex;justify-content:space-between;font-size:.85rem;color:var(--sub);margin-bottom:8px}
+.manual input{width:100%;accent-color:var(--needle)}
+.log{width:100%;background:var(--panel);border-radius:12px;padding:12px 14px}
+.loghead{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-weight:700}
+.log ol{list-style:none;margin:0;padding:0}
+.log li{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid color-mix(in srgb,var(--sub) 30%,transparent)}
+.log .a{font-size:1.4rem;font-weight:700;font-variant-numeric:tabular-nums;min-width:4.2em}
+.log .m{flex:1;font-size:.85rem;color:var(--sub)}
+.empty{color:var(--sub);font-size:.88rem;margin:4px 0}
+</style>
+</head>
+<body>
+<main id="app">
+  <h1>北からの角度</h1>
+
+  <div class="cam" id="cam" hidden>
+    <video id="video" playsinline muted autoplay></video>
+    <svg class="cross" viewBox="-100 -133 200 266" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      <g stroke="var(--needle)" stroke-width="2" fill="none" stroke-linecap="round">
+        <circle r="16"/>
+        <path d="M0 -40V-22M0 22V40M-40 0H-22M22 0H40"/>
+      </g>
+      <circle r="1.8" fill="var(--needle)"/>
+    </svg>
+    <div class="camnum"><span id="camdeg">--</span>°<small id="camdir"></small></div>
+  </div>
+
+  <div class="dial" aria-hidden="true">
+    <svg viewBox="-200 -200 400 400">
+      <circle r="190" fill="var(--panel)" stroke="var(--ink)" stroke-width="2"/>
+      <g id="ring"></g>
+      <circle r="118" fill="none" stroke="var(--sub)" stroke-width="1" opacity=".4"/>
+      <path d="M0 -206 L11 -184 L-11 -184Z" fill="var(--needle)"/>
+      <circle r="4" fill="var(--ink)"/>
+    </svg>
+  </div>
+
+  <div class="readout" role="status" aria-live="polite">
+    <div class="deg"><b id="deg">--</b><span>°</span></div>
+    <div class="dir" id="dir">センサー待機中</div>
+  </div>
+
+  <div class="row">
+    <button id="start" type="button">コンパスを開始</button>
+    <button id="camBtn" class="alt" type="button" hidden>カメラで測る</button>
+    <button id="rec" class="rec" type="button" hidden>この向きを記録</button>
+  </div>
+
+  <div class="manual" id="manual" hidden>
+    <label><span>センサーが使えないため手動で確認できます</span><span id="mv">0°</span></label>
+    <input id="slider" type="range" min="0" max="359" value="0" aria-label="向きを手動で設定">
+  </div>
+
+  <section class="log" id="logBox" hidden>
+    <div class="loghead"><span>記録</span><button id="clear" class="alt sm" type="button">すべて削除</button></div>
+    <p class="empty" id="empty">まだ記録がありません</p>
+    <ol id="list"></ol>
+  </section>
+
+  <p class="note" id="diag" hidden></p>
+  <p class="note" id="note">0°が北、時計回りに増えます（東90°・南180°・西270°）。値は磁北基準です。カメラで測るときは端末を縦に持ち、背面カメラの向きを測ります。</p>
+</main>
+<script>
+const NAMES=["北","北北東","北東","東北東","東","東南東","南東","南南東","南","南南西","南西","西南西","西","西北西","北西","北北西"];
+const $=id=>document.getElementById(id);
+const ring=$("ring");
+let h="";
+for(let a=0;a<360;a+=5){
+  const major=a%90===0,mid=a%30===0,len=major?22:mid?20:12;
+  h+=`<line x1="0" y1="-186" x2="0" y2="${-186+len}" stroke="var(--ink)" stroke-width="${mid?2:1}" transform="rotate(${a})" opacity="${mid?1:.5}"/>`;
+}
+[["N",0],["E",90],["S",180],["W",270]].forEach(([t,a])=>{
+  h+=`<text x="0" y="-146" text-anchor="middle" font-size="34" font-weight="700" fill="${t==="N"?"var(--needle)":"var(--ink)"}" transform="rotate(${a})">${t}</text>`;
+});
+for(let a=30;a<360;a+=30){ if(a%90) h+=`<text x="0" y="-150" text-anchor="middle" font-size="15" fill="var(--sub)" transform="rotate(${a})">${a}</text>`; }
+ring.innerHTML=h;
+
+let cur=null,last=null,camOn=false,stream=null;
+const norm=v=>((v%360)+360)%360;
+const nameOf=v=>NAMES[Math.round(norm(v)/22.5)%16];
+
+function show(v){
+  v=norm(v);cur=v;
+  const d=Math.round(v)%360;
+  $("deg").textContent=d;
+  $("dir").textContent=nameOf(v)+"の方向";
+  $("camdeg").textContent=d;
+  $("camdir").textContent=nameOf(v);
+  ring.setAttribute("transform",`rotate(${-v} 0 0)`);
+}
+
+function headingOf(e){
+  if(typeof e.webkitCompassHeading==="number") return e.webkitCompassHeading;
+  const abs=e.absolute||e.type==="deviceorientationabsolute";
+  if(!abs||e.alpha==null) return null;
+  const upright=camOn&&e.beta!=null&&Math.abs(e.beta)>50&&Math.abs(e.beta)<130;
+  if(upright){
+    const r=Math.PI/180,cY=Math.cos(e.gamma*r),sY=Math.sin(e.gamma*r),cX=Math.cos(e.beta*r),sX=Math.sin(e.beta*r),cZ=Math.cos(e.alpha*r),sZ=Math.sin(e.alpha*r);
+    const vx=-cZ*sY-sZ*sX*cY, vy=-sZ*sY+cZ*sX*cY;
+    return Math.atan2(vx,vy)/r;
+  }
+  return 360-e.alpha;
+}
+let nAbs=0,nRel=0;
+function onOrient(e){
+  if(e.type==="deviceorientationabsolute")nAbs++;else nRel++;
+  const v=headingOf(e);
+  if(v===null||isNaN(v)) return;
+  last=Date.now();show(v);
+}
+
+function showManual(){$("manual").hidden=false;$("rec").hidden=false;$("logBox").hidden=false;}
+$("slider").addEventListener("input",e=>{$("mv").textContent=e.target.value+"°";show(+e.target.value);});
+
+$("start").addEventListener("click",async()=>{
+  try{
+    let perm="granted";
+    if(typeof DeviceOrientationEvent!=="undefined"&&typeof DeviceOrientationEvent.requestPermission==="function"){
+      try{perm=await DeviceOrientationEvent.requestPermission();}catch(err){perm="error:"+((err&&err.name)||"");}
+    }
+    addEventListener("deviceorientationabsolute",onOrient,true);
+    addEventListener("deviceorientation",onOrient,true);
+    $("start").hidden=true;$("camBtn").hidden=false;$("rec").hidden=false;$("logBox").hidden=false;
+    $("dir").textContent="向きを取得中…";
+    const framed=window.self!==window.top;
+    const dg=$("diag");dg.hidden=false;
+    setInterval(()=>{dg.textContent=`診断: 埋め込み表示=${framed?"はい":"いいえ"} / 許可結果=${perm} / 絶対方位イベント=${nAbs}回 / 通常イベント=${nRel}回`;},700);
+    setTimeout(()=>{if(!last){
+      $("dir").textContent=perm!=="granted"?"センサーの許可が得られませんでした":framed?"埋め込み表示のためセンサーが制限されている可能性があります":"方位センサーの値を取得できません";
+      showManual();}},2500);
+  }catch(err){$("dir").textContent="センサーを開始できませんでした";showManual();}
+});
+
+async function camStart(){
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"}},audio:false});
+    $("video").srcObject=stream;
+    camOn=true;$("cam").hidden=false;$("app").classList.add("compact");$("camBtn").textContent="カメラを閉じる";
+  }catch(err){
+    $("note").textContent="カメラを使えませんでした。ブラウザのカメラ許可を確認してください。";
+  }
+}
+function camStop(){
+  if(stream)stream.getTracks().forEach(t=>t.stop());
+  stream=null;camOn=false;$("cam").hidden=true;$("app").classList.remove("compact");$("camBtn").textContent="カメラで測る";
+}
+$("camBtn").addEventListener("click",()=>camOn?camStop():camStart());
+
+let logs=[];
+try{logs=JSON.parse(localStorage.getItem("headingLogs")||"[]");}catch(e){logs=[];}
+function save(){try{localStorage.setItem("headingLogs",JSON.stringify(logs));}catch(e){}}
+function render(){
+  $("empty").hidden=logs.length>0;
+  $("list").innerHTML=logs.map((r,i)=>`<li><span class="a">${r.a}°</span><span class="m">${nameOf(r.a)}・${r.t}</span><button class="alt sm" type="button" data-i="${i}" aria-label="${r.a}度の記録を削除">削除</button></li>`).join("");
+}
+$("rec").addEventListener("click",()=>{
+  if(cur===null)return;
+  logs.unshift({a:Math.round(cur)%360,t:new Date().toLocaleTimeString("ja-JP")});
+  save();render();
+});
+$("list").addEventListener("click",e=>{
+  const i=e.target.dataset.i;
+  if(i!==undefined){logs.splice(+i,1);save();render();}
+});
+$("clear").addEventListener("click",()=>{logs=[];save();render();});
+render();
+</script>
+</body>
+</html>
